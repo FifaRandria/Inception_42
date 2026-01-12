@@ -1,0 +1,120 @@
+Dans docker on peut lancer une vm et encore acceder a son terminal pour 
+les tests :
+    build : -docker build (commande docker : toujour precede du mot cles : docker)
+            -Indiquer  le chemin ou se trouve le dockerfile du container a builder
+                docker build srcs/requirements/nginx/ ou docker build -t nginx
+
+    image ls : -apres un build reussi, on peut visualiser les images
+               -Nom de l'image porte le nom du container (NGINX). pour ce faire on peut faire : docker build -t <name>
+
+    run : si le container est dans image ls on peut run avec docker run <image_name>
+          si on fait docker run -it <name_image> : on accede au terminal de notre container
+
+    ps : avec docker ps, connaitre les container actuellement lances
+
+
+Apres le "docker run -it <nom image>" on a sencer ouvrir une terminal dans notre
+container, donc la on peut installez ce qu'on veut : commencer par mettre a jour APT
+{gestionnaire de paquet pour debian: telecharger, update,...}, donc on commence
+par apt update et apt upgrade, pour mettre a jour les paquets qu'APT possede, 
+apres on peut faire apt install nginx c'est fait on a nginx dans le container mais
+pour q'on ne reface pas ces etapes a chaque fois on le met dans le dockerfile avec le mot cles RUN 
+RUN atp install nginx -y avec le -y pour indiquer a apt de rependre yes au moment ou il demande
+"Do you want to continue [Y/n]"
+
+
+TSL : il faut stocker le certificat et la clef pour une connexion securisee.
+ RUN mkdir -p /etc/nginx/ssl, 
+ RUN apt install OpenSSL -y
+
+    generer le certificat et la clef : openssl req {req : demande de certificats au format PKCS#10}
+     -x509 : preciser le type du certificat.
+     -nodes : pour permettre a notre clefs privee de fonctionne sans mdp
+     -out et -keyout : indiquer ou on va stocker le certificat et la clef,
+     donc on a jusque-la : openssl req -x509 -nodes -out /etc/nginx/ssl/inception.crt -keyout /etc/nginx/ssl/inception.keyout
+
+     apres openssl nous demande d'autre champ a remplir d'ou la raison -subj
+     pour remplir ses champs dans le dockerfiel :
+     -subj "/C=FR/ST=IDF/L=Paris/O=42/CN=fifrandr.42.fr/UID=fifrandr"
+
+conf : dossier de conf pour notre container nginx : RUN mkdir -p /var/run/nginx
+    COPY conf/nginx.conf /etc/nginx/nginx.conf
+    Apres on fait le conf...voir nginx conf (bien indiquer les port, ssl, root)
+
+
+MARIADB : systeme de gestion de bases de donnees, branche de MYSQL (mariadb=copie de mysql):\
+    la gestion de donnes est basees sur un modele de TABLEAU, 
+    donc touts les donnes sont stocker dans un tableau pouvant etre relies
+    les uns aux autres via des cles
+        [mysqld] => on indique a quelle categorie appartiennent la configuration
+        datadir = /var/lib/mysql => le dossier ou se trouve la bd
+        socket = /run/mysqld/mysqld.sock => pour communiquer avec socket (facult)
+        bind_address=* => tous IP peut connecter
+        port = 3306 => port a laquelle ecoute MYSQL
+        user = mysql => utilisateur
+
+        dans DOCKERFILE : COPY conf/50-server.cnf /etc/mysql/mariadb.conf.d/50-server.cnf
+
+        Maintenant il faut passer un script a executer dans le dockerfile, pour cree le bd
+        et  un utilisateur associer.
+
+            le script : 
+                service mysql start; => demarer mysql
+                mysql -e "CREATE DATABASE IF NOT EXISTS \`${SQL_DATABASE}\`;" => cree une table avec un non dans le .env envoyer par compose.yml
+                msql -e "CREATE USER IF NOT EXISTS \ '${SQL_USER}\ '@'localhost' IDENTIFIED BY '${SQL_PASSWORD}';" => cree une user si il n'exite pas deja  avec les var env dans .env et 
+                mysql -e "GRANT ALL PRIVILEGES ON \`${SQL_DATABASE}\`.* TO \`${SQL_USER}\`@'%' IDENTIFIED BY '${SQL_PASSWORD}';" => je donne tous les droits a cet utilisateur
+                mysql -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '${SQL_ROOT_PASSWORD}';" => de base il y a deja root, mais je qui est necessaire c'est de mettre le bon mot de passe
+             Par rapport a env cette root.
+                mysql -e "FLUSH PRIVILEGES;" => raffraichir tout pour que mysql prennent toute en compte
+
+
+            apres tout cela on redemare mysql : mysqladmin -u root -p$SQL_ROOT_PASSWORD shutdown {pour eteindre et apres on redemare}
+            
+            envoyer par le docker compose.yml
+
+
+WORDPRESS : Dockerfile : en + des base, on installe wget pour installer 
+wordpress avec son lien de telechargement, RUN apt-get -y install wget
+
+Comme le sujet l'indique appart wordpress on a aussi besoin de php et de ses quelque dependances
+RUN apt-get install -y php7.3\
+php-fpm\
+php-mysql\
+mariadb-client
+
+apres wget on installe wordpress et on le met dans /var/www comme indiquer dans NGINX:
+RUN wget https://fr.wordpress.org/wordpress-6.0-fr_FR.tar.gz -P /var/www
+
+On decompresse et on supprime celle qui est compresser
+RUN cd /var/www && tar -xzf wordpress-6.0-fr_FR.tar.gz && rm wordpress-6.0-fr_FR.tar.gz
+
+
+On donne le droit a root  pour pouvoir ecrire dans ce dossier wordpress
+RUN chown -R root:root /var/www/wordpress
+
+Il est important de savoir que php sert a wordpress, la plupart des fichier de worpress sont des .php
+On modifie le fichier de conf de base pour modifier 2 petite choses:
+    ajouter : clear_env = no et modifie listen=wordpress:9000 pour que wp ecoute a ce port
+
+
+Installer une cli {une interface textuelle qui traite les commandes vers un programme informatique}: pour une configuration automatique 
+
+RUN wget https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+
+lorsque nous lancons wp pour la premiere fois il devrait y avoir une page de configuration
+d'abord, mais pour ne pas configurer et remplir ce page a chaque lancement, CLI nous aide a automatiser
+cela un petit peu, cette configuration necessite generalement des information de la bd mariadb donc il faut
+s'assurer que le container mariadb soit pres avant wp.
+
+avec cli cela donnerait quelque chose comme :
+wp config create --allow-root \
+--dbname=$SQL_DATABASE \
+--dbuser=$SQL_USER \
+--dbpass=$SQL_PASSWORD \
+--dbhost=mariadb:3306 --path='/var/www/wordpress'
+
+
+pour test une container en particulier :
+    docker exec -it nginx bash => apres ce commande 
+on est dans le container nginx et on devrait pouvoir le tester independament
+des autre container

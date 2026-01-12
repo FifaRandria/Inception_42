@@ -1,0 +1,150 @@
+Excellent 👏 tu travailles donc sur le projet Inception (probablement celui de l’école 42, avec Docker, Nginx, WordPress, MariaDB, etc.) — parfait !
+
+Une fois que tu as terminé la configuration et que tout build correctement, il faut tester méthodiquement chaque composant pour t’assurer que tout fonctionne comme prévu.
+Voici une checklist complète et une méthode de test pas à pas 🔍
+
+🧰 1. Vérifier que tous les conteneurs tournent
+
+Lance ton projet :
+
+make up
+
+
+ou :
+
+docker compose up -d
+
+
+Puis vérifie :
+
+docker ps
+
+
+✅ Tu dois voir 3 conteneurs actifs (si tu suis le sujet 42 classique) :
+
+nginx
+
+wordpress
+
+mariadb
+
+Si un conteneur est en état Exited, regarde les logs :
+
+docker logs <nom_du_conteneur>
+
+🧩 2. Tester la base de données (MariaDB)
+
+Entre dans le conteneur :
+
+docker exec -it mariadb bash
+
+
+Puis connecte-toi à MySQL :
+
+mysql -u <username> -p
+
+
+Teste :
+
+SHOW DATABASES;
+USE <nom_de_ta_db>;
+SHOW TABLES;
+
+
+✅ Vérifie que la base WordPress est bien créée, et que tu peux y accéder sans erreur.
+
+🌐 3. Tester WordPress
+
+Va sur ton navigateur :
+
+https://<ton-domaine>/
+
+
+(ex. https://votre_login.42.fr)
+
+Tu dois voir ton site WordPress accessible en HTTPS, avec le certificat SSL auto-signé que tu as généré.
+
+✅ Vérifie :
+
+La redirection HTTP → HTTPS fonctionne
+
+Tu peux te connecter à /wp-admin
+
+Tu peux créer un article, changer un thème, etc.
+
+Le conteneur wordpress reste actif pendant que tu navigues
+
+🔒 4. Vérifier le SSL et Nginx
+
+Vérifie la configuration Nginx :
+
+docker exec -it nginx cat /etc/nginx/conf.d/default.conf
+
+
+ou /etc/nginx/sites-enabled/default
+
+✅ Vérifie que :
+
+Le port 443 est bien configuré
+
+Le certificat SSL (.crt et .key) est bien référencé
+
+Le proxy_pass vers wordpress:9000 (ou autre port PHP-FPM) est correct
+
+Puis, teste la connexion HTTPS :
+
+curl -Ik https://<ton-domaine>/
+
+
+Tu dois voir :
+
+HTTP/2 200
+
+
+et pas d’erreur de certificat.
+
+📦 5. Vérifier la persistance des volumes
+
+Le but d’Inception est que les données restent même après un restart.
+
+Fais :
+
+docker compose down
+docker compose up -d
+
+
+✅ Vérifie que :
+
+Ton site WordPress est toujours configuré
+
+Les articles et médias existent toujours
+
+Si ce n’est pas le cas → tes volumes ne sont pas bien montés.
+
+🧹 6. Vérifier la propreté du projet
+
+Avant de valider :
+
+Lance make clean et make fclean → tout doit bien se supprimer
+
+make re → tout doit bien se reconstruire sans erreur
+
+Aucune dépendance inutile, pas d’images Docker “dangling”
+
+Vérifie les images :
+
+docker images
+
+
+✅ Tu dois voir uniquement tes 3 images (nginx, wordpress, mariadb)
+
+🔧 7. Tests optionnels (bonus)
+🧪 Vérifie les ports :
+sudo lsof -i -P -n | grep LISTEN
+
+
+→ 443 et 80 doivent être utilisés par Nginx.
+
+🧱 Teste les permissions :
+
+Dans WordPress, essaie d’ajouter un plugin ou une image → si tu as une erreur de droit, corrige les permissions sur /var/www/html.
